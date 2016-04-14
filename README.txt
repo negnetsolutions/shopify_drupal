@@ -1,3 +1,4 @@
+**This is a fork of Bonify, LLC's shopify drupal module with a lot of custom changes. Use at your own risk**
 
 Shopify eCommerce
 +----------------------------------------------------+
