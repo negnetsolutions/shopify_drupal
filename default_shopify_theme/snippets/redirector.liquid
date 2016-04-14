@@ -1,0 +1,15 @@
+{% assign bl = settings.redirect_url %}
+<script>
+{% if redirect == nil %}
+  var redirect = location.pathname;
+  window.top.location = "{{ bl }}"+redirect;
+{% else %}
+  window.top.location = "{{ bl }}{{ redirect }}";
+{% endif %}
+</script>
+<div class="wrap">
+<h2>Redirecting to {{settings.redirect_url}}...</h2>
+{% if redirect != nil %}
+<p>If you are not redirected shortly, please click <a href="{{ bl }}{{ redirect }}">here</a>.</p>
+{% endif %}
+</div>

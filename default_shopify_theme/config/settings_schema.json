@@ -1,0 +1,27 @@
+[
+  {
+    "name": "theme_info",
+    "logo": "https://cdn.shopify.com/s/global/branding/shopify_logo_256x256.png",
+    "settings": [
+      {
+        "type": "header",
+        "content": "Negnet Solutions Drupal Shopify Integration"
+      },
+      {
+        "type": "paragraph",
+        "content": "Use this theme to integrate with Negnet Solutions Shopify Integration."
+      }
+    ]
+  },
+  {
+    "name": "Settings",
+    "settings": [
+      {
+        "type": "text",
+        "id": "redirect_url",
+        "label": "Drupal URL",
+        "default": "http://www.mysite.com"
+      }
+    ]
+  }
+]
