@@ -350,22 +350,24 @@ function shopify_admin_sync_form($form, &$form_state) {
   );
 
   // Cron settings.
-  $form['cron']['sync_products'] = array(
-    '#type' => 'checkbox',
-    '#title' => t('Sync Products on cron run.'),
-    '#default_value' => variable_get('shopify_cron_sync_products', FALSE),
-  );
-  $form['cron']['sync_collections'] = array(
-    '#type' => 'checkbox',
-    '#title' => t('Sync Collections on cron run.'),
-    '#default_value' => variable_get('shopify_cron_sync_collections', FALSE),
-  );
   $form['cron']['sync_time'] = array(
     '#type' => 'textfield',
-    '#title' => t('How often to sync'),
+    '#title' => t('How often to sync products and collections?'),
     '#description' => t('Enter the number of seconds to wait to sync between cron runs.<br />To sync once per day, enter "86400". To sync once per hour, enter "3600".<br />Leave empty or "0" to sync on every cron run.'),
     '#default_value' => variable_get('shopify_cron_sync_time', 0),
   );
+  $form['cron']['sync_collections'] = array(
+    '#type' => 'textfield',
+    '#title' => t('How often to sync collections?'),
+    '#description' => t('Enter the number of seconds to wait to sync between cron runs.<br />To sync once per day, enter "86400". To sync once per hour, enter "3600".<br />Leave empty or "0" to sync on every cron run.'),
+    '#default_value' => variable_get('shopify_cron_sync_collections_time', 0),
+  );
+  $form['cron']['debug'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Debug sync in watchdog'),
+    '#default_value' => variable_get('shopify_cron_debug', FALSE),
+  );
+
   $form['cron']['save_cron'] = array(
     '#type' => 'submit',
     '#value' => t('Save cron settings'),
@@ -417,9 +419,9 @@ function shopify_admin_delete_orphaned_tags_form_submit($form, &$form_state) {
  */
 function shopify_admin_cron_sync_form_submit($form, $form_state) {
   $v = $form_state['values'];
-  variable_set('shopify_cron_sync_products', $v['cron']['sync_products']);
-  variable_set('shopify_cron_sync_collections', $v['cron']['sync_collections']);
   variable_set('shopify_cron_sync_time', $v['cron']['sync_time']);
+  variable_set('shopify_cron_sync_collections_time', $v['cron']['sync_collections']);
+  variable_set('shopify_cron_debug', $v['cron']['debug']);
 }
 
 /**

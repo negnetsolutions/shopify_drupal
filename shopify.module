@@ -393,24 +393,224 @@ function shopify_cron() {
   //process any webhook requests in the queue
   shopify_shopify_webhook_processqueue();
 
-  // Check last cron run time vs. the cron speed setting.
-  if (variable_get('cron_last') + variable_get('shopify_cron_sync_time', 0) > REQUEST_TIME) {
-    // No need to sync yet.
-    return FALSE;
+  //process the full sync queue
+  shopify_sync_products_queue();
+
+  return;
+}
+
+function shopify_cron_queue_info(){
+  $queues['shopify_queued_sync'] = array(
+    'worker callback' => 'shopify_sync_products_queue_op',
+    'time' => 30
+  );
+  return $queues;
+}
+
+function shopify_sync_products_queue_op($item){
+
+  switch($item['command']){
+
+    //open the batch
+    case 'openCollectionBatch':
+      watchdog('shopify','Starting Collection Sync Batch.', array(), WATCHDOG_NOTICE);
+      break;
+
+    //close the batch and set last sync time to now
+    case 'closeCollectionBatch':
+      //this is a final queue item; We need to close the batch;
+      $datetime = new DateTime();
+      $last_updated = $datetime->format('Y-m-d H:i');
+      variable_set('shopify_last_collection_sync', $last_updated);
+
+      watchdog('shopify','Closing Collection Sync Batch. <br />Last Sync: @last',array('@last'=>$last_updated),WATCHDOG_NOTICE);
+
+      break;
+
+    //open the batch
+    case 'openProductBatch':
+      watchdog('shopify','Starting Product Sync Batch.', array(), WATCHDOG_NOTICE);
+      break;
+
+    //close the batch and set last sync time to now
+    case 'closeProductBatch':
+      //this is a final queue item; We need to close the batch;
+      $datetime = new DateTime();
+      $last_updated = $datetime->format('Y-m-d H:i');
+      variable_set('shopify_last_product_sync', $last_updated);
+
+      watchdog('shopify','Closing Product Sync Batch.<br />Last Sync: @last',array('@last'=>$last_updated),WATCHDOG_NOTICE);
+
+      break;
+
+    //delete collections not in shopify
+    case 'deleteCollections':
+      if ($deleted = shopify_sync_deleted_collections(array('limit' => 250)) > 0) {
+        watchdog('shopify','Deleted @count collections from the store.',array('@count'=>$deleted),WATCHDOG_INFO);
+      }
+      break;
+
+    //sync over all new collections
+    case 'syncCollections':
+      $collection = $item['collection'];
+
+      $term = shopify_collection_load($collection['id']);
+      if (!$term) {
+        // Need to create a new collection.
+        shopify_collection_create($collection, TRUE);
+      }
+      else {
+        shopify_collection_update($collection, TRUE);
+      }
+
+      if(variable_get('shopify_cron_debug',false) == true){
+        watchdog('shopify','Synced collection "@title"',array('@title'=>$collection['title']),WATCHDOG_DEBUG);
+      }
+
+      break;
+
+    //delete any products not on shopify
+    case 'deleteProducts':
+      if ($deleted = shopify_sync_deleted_products(array('limit' => 250)) > 0) {
+        watchdog('shopify','Deleted @count products from the store.',array('@count'=>$deleted),WATCHDOG_INFO);
+      }
+
+      break;
+
+    //sync products
+    case 'syncProduct':
+      //process the page
+      $products = shopify_api_get_products(
+        array(
+          'page' => $item['page'],
+          'limit' => $item['num_per_batch'],
+          'updated_at_min' => $item['updated_at_min']
+        )
+      );
+
+      //process each product
+      foreach ($products as $product) {
+        $shopify_product = shopify_product_update($product['id'], 0, $product);
+        shopify_sync_alterProductFieldsFromVariant($product, $shopify_product);
+        $shopify_product->save();
+
+        //find unprocessed queue updates and mark them as usurped
+        shopify_shopify_webhook_markQueueProcessed(shopify_shopify_webhook_findUnprocessedQueueBefore($product['id']), 2);
+
+        foreach ($product['variants'] as $v) {
+          if($v['id'] != 0){
+            $variant = shopify_product_update($product['id'], $v['id'], $v);
+            $variant->save();
+          }
+        }
+
+        if(variable_get('shopify_cron_debug',false) == true){
+          watchdog('shopify','Synced product "@id" and its variants',array('@id'=>$shopify_product->product_id),WATCHDOG_DEBUG);
+        }
+
+      }
+
+      break;
   }
-  if (variable_get('shopify_cron_sync_products')) {
-    // Sync products.
-    shopify_sync_products(array(
-      'updated_at_min' => variable_get('shopify_last_product_sync'),
-      'limit' => 250,
-    ));
-  }
-  if (variable_get('shopify_cron_sync_collections')) {
-    // Sync collections.
-    shopify_sync_collections(array(
-      'updated_at_min' => variable_get('shopify_last_collection_sync'),
-      'limit' => 250,
-    ));
+
+}
+
+function shopify_sync_products_queue(){
+  //get a reliable queue
+  $queue = DrupalQueue::get('shopify_queued_sync', true);
+  $runtime = time();
+
+  //check if queue is empty -- so we can setup new items
+  if($queue->numberOfItems() == 0){
+
+    if((strtotime(variable_get('shopify_last_product_sync',0)) + variable_get('shopify_cron_sync_time', 0)) <= $runtime) {
+
+      $data = array(
+        'command'=>'openProductBatch',
+      );
+      if(!$queue->createItem($data)){
+        watchdog('shopify','Could not create openProductBatch queue item for sync!',array(),WATCHDOG_ERROR);
+      }
+
+      $num_per_batch = variable_get('shopify_sync_products_queue_per_batch', 50);
+      $updated_at_min = variable_get('shopify_last_product_sync',0);
+
+      //process product syncing
+      $num_products = shopify_api_get_product_count(
+        array(
+          'updated_at_min' => $updated_at_min
+        )
+      );
+
+      $num_operations = ceil($num_products / $num_per_batch);
+      for ($page = 1; $page <= $num_operations; $page++) {
+        $data = array(
+          'command'=>'syncProduct',
+          'updated_at_min'=>$updated_at_min,
+          'page'=>$page,
+          'num_per_batch'=>$num_per_batch
+        );
+        if(!$queue->createItem($data)){
+          watchdog('shopify','Could not create queue item for sync!', array(), WATCHDOG_ERROR);
+        }
+      }
+
+      //process product deletions
+      $data = array(
+        'command' => 'deleteProducts'
+      );
+      if(!$queue->createItem($data)){
+        watchdog('shopify','Could not create deleteProducts queue item for sync!', array(), WATCHDOG_ERROR);
+      }
+
+      //create final product close batch queue item
+      $data = array(
+        'command'=>'closeProductBatch',
+      );
+      if(!$queue->createItem($data)){
+        watchdog('shopify','Could not create closeProductBatch queue item for sync!', array(), WATCHDOG_ERROR);
+      }
+    }
+
+    if((strtotime(variable_get('shopify_last_collection_sync',0)) + variable_get('shopify_cron_sync_collections_time', 0)) <= $runtime) {
+
+      $data = array(
+        'command'=>'openCollectionBatch',
+      );
+      if(!$queue->createItem($data)){
+        watchdog('shopify','Could not create openCollectionBatch queue item for sync!', array(), WATCHDOG_ERROR);
+      }
+
+      //handle collection syncing
+      $collections = shopify_api_get_collections(array('limit' => 250));
+      $operations = array();
+      foreach ($collections as $count => $c) {
+
+        $data = array(
+          'command'=>'syncCollections',
+          'collection' => $c
+        );
+        if(!$queue->createItem($data)){
+          watchdog('shopify','Could not create queue syncCollections item for sync!', array(), WATCHDOG_ERROR);
+        }
+      }
+      //process collection deletions
+      $data = array(
+        'command' => 'deleteCollections'
+      );
+      if(!$queue->createItem($data)){
+        watchdog('shopify','Could not create deleteCollections queue item for sync!', array(), WATCHDOG_ERROR);
+      }
+
+      //create final product close batch queue item
+      $data = array(
+        'command'=>'closeCollectionBatch',
+      );
+      if(!$queue->createItem($data)){
+        watchdog('shopify','Could not create closeCollectionBatch queue item for sync!', array(), WATCHDOG_ERROR);
+      }
+    }
+
   }
 }
 
