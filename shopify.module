@@ -399,12 +399,12 @@ function shopify_cron_queue_info(){
   $queues['shopify_webhook_queued_sync'] = array(
     'worker callback' => 'shopify_shopify_webhook_process_queue_op',
     'skip on cron' => false,
-    'time' => 10
+    'time' => 20
   );
   $queues['shopify_queued_sync'] = array(
     'worker callback' => 'shopify_sync_products_queue_op',
     'skip on cron' => false,
-    'time' => 30
+    'time' => 40
   );
   return $queues;
 }
