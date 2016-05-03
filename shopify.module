@@ -534,7 +534,7 @@ function shopify_sync_products_queue(){
         watchdog('shopify','Could not create openProductBatch queue item for sync!',array(),WATCHDOG_ERROR);
       }
 
-      $num_per_batch = variable_get('shopify_sync_products_queue_per_batch', 50);
+      $num_per_batch = variable_get('shopify_sync_products_queue_per_batch', 20);
       $updated_at_min = variable_get('shopify_last_product_sync',0);
 
       //process product syncing
