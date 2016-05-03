@@ -65,7 +65,8 @@ function shopify_shopify_webhook_process_queue_op($item){
   $hook = $item['command'];
   $payload = json_decode($item['payload'],true);
 
-  watchdog('shopify','Processing webhook %command', array('%command'=>$hook), WATCHDOG_NOTICE);
+  $id = (isset($payload['id'])) ? $payload['id'] : null;
+  watchdog('shopify','Processing webhook %command id: %id', array('%command'=>$hook, '%id'=>$id), WATCHDOG_NOTICE);
 
   // Allow modules to hook into webhooks firing.
   module_invoke_all('shopify_webhook', $hook, $payload);
