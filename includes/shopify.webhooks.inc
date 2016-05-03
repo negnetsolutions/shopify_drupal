@@ -13,11 +13,22 @@ function shopify_incoming_webhook() {
 
   // Log webhooks if the debug option is set.
   if (variable_get('shopify_webhooks_debug', FALSE)) {
-    watchdog('shopify_webhook', $hook . ':' . check_plain(var_export(json_decode($json,true), TRUE)));
+    watchdog('shopify_webhook', 'Incomming '.$hook . ':' . check_plain(var_export(json_decode($json,true), TRUE)));
   }
 
   //add the webhook to the queue
   shopify_shopify_webhook_queue($hook,$json);
+
+  //process a single queue item - if queue is not backlogged then instant sync
+  $queue = DrupalQueue::get('shopify_webhook_queued_sync', true);
+  $item = $queue->claimItem();
+  if($item !== false){
+    if(shopify_shopify_webhook_process_queue_op((array)$item->data)){
+      //item has been processed. Let's delete it
+      $queue->deleteItem($item);
+    }
+  }
+
 }
 
 
@@ -28,90 +39,67 @@ function shopify_shopify_webhook_findUnprocessedQueueBefore($product_id, $time=f
 
   $query = <<<EOL
 select *
-from shopify_webhook_queue q
-where processed = 0
-and q.payload REGEXP '$regex'
-and q.created_at < $time
-order by q.created_at ASC
+from queue q
+where q.name = 'shopify_webhook_queued_sync'
+and q.data REGEXP '$regex'
+and q.created < $time
+order by q.created ASC
 EOL;
 
   $result = db_query($query);
   $ids = array();
   foreach($result as $record){
-    $ids[] = $record->id;
+    $ids[] = $record->item_id;
   }
 
   return $ids;
 }
 
-function shopify_shopify_webhook_processqueue($limit=false){
+function shopify_shopify_webhook_process_queue_op($item){
 
-  $limit = ($limit === false) ? variable_get('shopify_webhooks_que_process_limit', 10) : $limit;
-
-  //get queues to process -> only $limit per run
-  $query = <<<EOL
-select *
-from shopify_webhook_queue q
-where processed = 0
-order by q.created_at ASC
-limit $limit
-EOL;
-
-  $result = db_query($query);
-  $ids = array();
-  foreach($result as $record){
-    $hook = $record->command;
-    $payload = json_decode($record->payload, true);
-    $id = $record->id;
-
-    // Allow modules to hook into webhooks firing.
-    module_invoke_all('shopify_webhook', $hook, $payload);
-    module_invoke_all('shopify_webhook_' . $hook, $payload);
-
-    shopify_shopify_webhook_markQueueProcessed(array($id), 1);
+  if($item === false){
+    watchdog('shopify','Webhook queue item is false!', array(), WATCHDOG_ERROR);
+    return;
   }
 
-  //delete old processed hooks
-  $deleted = db_delete('shopify_webhook_queue')
-    ->condition('processed',1)
-    ->condition('created_at', (time() - 1209600), '<')
-    ->execute()
-  ;
-  $deleted = db_delete('shopify_webhook_queue')
-    ->condition('processed',2)
-    ->condition('created_at', (time() - 1209600), '<')
-    ->execute()
-  ;
+  $hook = $item['command'];
+  $payload = json_decode($item['payload'],true);
+
+  watchdog('shopify','Processing webhook %command', array('%command'=>$hook), WATCHDOG_NOTICE);
+
+  // Allow modules to hook into webhooks firing.
+  module_invoke_all('shopify_webhook', $hook, $payload);
+  module_invoke_all('shopify_webhook_' . $hook, $payload);
+
+  return true;
 }
 
 function shopify_shopify_webhook_markQueueProcessed($ids, $status=1){
 
   foreach($ids as $id){
-    //set the webhook to processed
-    $updated = db_update('shopify_webhook_queue')
-      ->fields(array(
-        'processed' => $status
-      ))
-      ->condition('id',$id)
-      ->execute()
-    ;
+
+    watchdog('shopify','Removing webhook queue item_id: %id', array('%id'=>$id), WATCHDOG_NOTICE);
+
+    //delete the queue item
+    $deleted = db_delete('queue')
+      ->condition('item_id', $id)
+      ->execute();
   }
 
   return true;
 }
 
 function shopify_shopify_webhook_queue($hook,$json){
+  $queue = DrupalQueue::get('shopify_webhook_queued_sync', true);
 
-  $id = db_insert('shopify_webhook_queue')->
-    fields(array(
-      'command'=>$hook,
-      'payload'=>$json,
-      'received_ip'=>ip2long($_SERVER['REMOTE_ADDR']),
-      'created_at'=>time(),
-      'processed'=>0
-    ))
-    ->execute();
-  return $id;
+  $data = array(
+    'command'=>$hook,
+    'payload'=>$json
+  );
+
+  if(!$queue->createItem($data)){
+    watchdog('shopify','Could not create webhook queue!',array(),WATCHDOG_ERROR);
+  }
 }
 
 /**
