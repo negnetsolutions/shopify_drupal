@@ -19,14 +19,18 @@ function shopify_incoming_webhook() {
   //add the webhook to the queue
   shopify_shopify_webhook_queue($hook,$json);
 
-  //process a single queue item - if queue is not backlogged then instant sync
-  $queue = DrupalQueue::get('shopify_webhook_queued_sync', true);
-  $item = $queue->claimItem();
-  if($item !== false){
-    if(shopify_shopify_webhook_process_queue_op((array)$item->data)){
-      //item has been processed. Let's delete it
-      $queue->deleteItem($item);
+  if(lock_acquire('shopify_webhook_queue_processing')){
+    //process a single queue item - if queue is not backlogged then instant sync
+    $queue = DrupalQueue::get('shopify_webhook_queued_sync', true);
+    $item = $queue->claimItem();
+    if($item !== false){
+      if(shopify_shopify_webhook_process_queue_op((array)$item->data)){
+        //item has been processed. Let's delete it
+        $queue->deleteItem($item);
+      }
     }
+
+    lock_release('shopify_webhook_queue_processing');
   }
 
 }
