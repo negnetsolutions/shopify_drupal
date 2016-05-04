@@ -850,6 +850,18 @@ function shopify_webhooks_admin($form, &$form_state) {
     '#title' => t('Debug webhooks in watchdog'),
     '#default_value' => variable_get('shopify_webhooks_debug', FALSE),
   );
+  $form['instant_process'] = array(
+    '#type' => 'select',
+    '#title' => 'Select how many webhooks to process when hook received.',
+    '#description' => t('Any hooks not processed directly will be ran on cron.'),
+    '#options' => array(
+      '0' => 0,
+      '1' => 1,
+      '2' => 2,
+      '3' => 3,
+    ),
+    '#default_value' => variable_get('shopify_webhooks_instant_process', 1),
+  );
 
   $form['save'] = array(
     '#type' => 'submit',
@@ -892,6 +904,7 @@ function shopify_register_webhooks_submit($form, &$form_state) {
   $values = $form_state['values'];
 
   variable_set('shopify_webhooks_debug', $values['debug']);
+  variable_set('shopify_webhooks_instant_process', $values['instant_process']);
   variable_set('shopify_last_registered_host', $values['register']['hostname']);
 
   if ($form_state['values']['op'] == 'Save') {

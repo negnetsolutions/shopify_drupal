@@ -22,11 +22,14 @@ function shopify_incoming_webhook() {
   if(lock_acquire('shopify_webhook_queue_processing')){
     //process a single queue item - if queue is not backlogged then instant sync
     $queue = DrupalQueue::get('shopify_webhook_queued_sync', true);
-    $item = $queue->claimItem();
-    if($item !== false){
-      if(shopify_shopify_webhook_process_queue_op((array)$item->data)){
-        //item has been processed. Let's delete it
-        $queue->deleteItem($item);
+
+    for($i = 0; $i < (int) variable_get('shopify_webhooks_instant_process', 1); $i++){
+      $item = $queue->claimItem();
+      if($item !== false){
+        if(shopify_shopify_webhook_process_queue_op((array)$item->data)){
+          //item has been processed. Let's delete it
+          $queue->deleteItem($item);
+        }
       }
     }
 
