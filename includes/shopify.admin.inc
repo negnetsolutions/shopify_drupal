@@ -362,10 +362,15 @@ function shopify_admin_sync_form($form, &$form_state) {
     '#description' => t('Enter the number of seconds to wait to sync between cron runs.<br />To sync once per day, enter "86400". To sync once per hour, enter "3600".<br />Leave empty or "0" to sync on every cron run.'),
     '#default_value' => variable_get('shopify_cron_sync_collections_time', 0),
   );
-  $form['cron']['debug'] = array(
-    '#type' => 'checkbox',
-    '#title' => t('Debug sync in watchdog'),
-    '#default_value' => variable_get('shopify_cron_debug', FALSE),
+  $form['cron']['debug_level'] = array(
+    '#type' => 'select',
+    '#title' => 'Sync log verbosity',
+    '#options' => array(
+      '1' => t('Normal'),
+      '2' => t('More Info'),
+      '3' => t('Verbose'),
+    ),
+    '#default_value' => variable_get('shopify_cron_debug_level', 1),
   );
 
   $form['cron']['save_cron'] = array(
@@ -421,7 +426,7 @@ function shopify_admin_cron_sync_form_submit($form, $form_state) {
   $v = $form_state['values'];
   variable_set('shopify_cron_sync_time', $v['cron']['sync_time']);
   variable_set('shopify_cron_sync_collections_time', $v['cron']['sync_collections']);
-  variable_set('shopify_cron_debug', $v['cron']['debug']);
+  variable_set('shopify_cron_debug_level', $v['cron']['debug_level']);
 }
 
 /**

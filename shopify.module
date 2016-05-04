@@ -415,7 +415,7 @@ function shopify_sync_products_queue_op($item){
 
     //open the batch
     case 'openCollectionBatch':
-      watchdog('shopify','Starting Collection Sync Batch. (Syncing %count Collections)', array('%count'=>$item['collection_count']), WATCHDOG_NOTICE);
+      shopify_sync_log('Starting Collection Sync Batch. (Syncing %count Collections)',2,array('%count'=>$item['collection_count']));
       break;
 
     //close the batch and set last sync time to now
@@ -425,13 +425,17 @@ function shopify_sync_products_queue_op($item){
       $last_updated = $datetime->format('Y-m-d H:i');
       variable_set('shopify_last_collection_sync', $last_updated);
 
-      watchdog('shopify','Closing Collection Sync Batch. <br />Last Sync: @last',array('@last'=>$last_updated),WATCHDOG_NOTICE);
+      shopify_sync_log('Closing Collection Sync Batch. <br />Last Sync: @last',2,array('@last'=>$last_updated));
 
       break;
 
     //open the batch
     case 'openProductBatch':
-      watchdog('shopify','Starting Product Sync Batch. (Syncing %count Products)', array('%count'=>$item['product_count']), WATCHDOG_NOTICE);
+      $level = 2;
+      if($item['product_count'] > 1){
+        $level = 1;
+      }
+      shopify_sync_log('Starting Product Sync Batch. (Syncing %count Products)',$level,array('%count'=>$item['product_count']));
       break;
 
     //close the batch and set last sync time to now
@@ -441,14 +445,14 @@ function shopify_sync_products_queue_op($item){
       $last_updated = $datetime->format('Y-m-d H:i');
       variable_set('shopify_last_product_sync', $last_updated);
 
-      watchdog('shopify','Closing Product Sync Batch. <br />Last Sync: @last',array('@last'=>$last_updated),WATCHDOG_NOTICE);
+      shopify_sync_log('Closing Product Sync Batch. <br />Last Sync: @last',2,array('@last'=>$last_updated));
 
       break;
 
     //delete collections not in shopify
     case 'deleteCollections':
       if ($deleted = shopify_sync_deleted_collections(array('limit' => 250)) > 0) {
-        watchdog('shopify','Deleted @count collections from the store.',array('@count'=>$deleted),WATCHDOG_INFO);
+        shopify_sync_log('Deleted @count collections from the store.',1,array('@count'=>$deleted));
       }
       break;
 
@@ -465,16 +469,14 @@ function shopify_sync_products_queue_op($item){
         shopify_collection_update($collection, TRUE);
       }
 
-      if(variable_get('shopify_cron_debug',false) == true){
-        watchdog('shopify','Synced collection "@title"',array('@title'=>$collection['title']),WATCHDOG_DEBUG);
-      }
+      shopify_sync_log('Synced collection "@title"',3,array('@title'=>$collection['title']));
 
       break;
 
     //delete any products not on shopify
     case 'deleteProducts':
       if ($deleted = shopify_sync_deleted_products(array('limit' => 250)) > 0) {
-        watchdog('shopify','Deleted @count products from the store.',array('@count'=>$deleted),WATCHDOG_INFO);
+        shopify_sync_log('Deleted @count products from the store.',1,array('@count'=>$deleted));
       }
 
       break;
@@ -506,15 +508,38 @@ function shopify_sync_products_queue_op($item){
           }
         }
 
-        if(variable_get('shopify_cron_debug',false) == true){
-          watchdog('shopify','Synced product "@id" and its variants',array('@id'=>$shopify_product->product_id),WATCHDOG_DEBUG);
-        }
+        shopify_sync_log('Synced product "@id" and its variants',3,array('@id'=>$shopify_product->product_id));
 
       }
 
       break;
   }
 
+}
+
+function shopify_sync_log($message,$level=1,$variables=array()){
+  $dlevel = variable_get('shopify_cron_debug_level',1);
+  if($level > $dlevel){
+    return;
+  }
+
+  $wlevel = WATCHDOG_INFO;
+  switch($level){
+    case 0:
+      $wlevel = WATCHDOG_ERROR;
+      break;
+    case 1:
+      $wlevel = WATCHDOG_NOTICE;
+      break;
+    case 2:
+      $wlevel = WATCHDOG_INFO;
+      break;
+    case 3:
+      $wlevel = WATCHDOG_DEBUG;
+      break;
+  }
+
+  watchdog('shopify',$message,$variables,$wlevel);
 }
 
 function shopify_sync_products_queue(){
@@ -542,7 +567,7 @@ function shopify_sync_products_queue(){
         'product_count' => $num_products
       );
       if(!$queue->createItem($data)){
-        watchdog('shopify','Could not create openProductBatch queue item for sync!',array(),WATCHDOG_ERROR);
+        shopify_sync_log('Could not create openProductBatch queue item for sync!',0);
       }
 
 
@@ -555,7 +580,7 @@ function shopify_sync_products_queue(){
           'num_per_batch'=>$num_per_batch
         );
         if(!$queue->createItem($data)){
-          watchdog('shopify','Could not create queue item for sync!', array(), WATCHDOG_ERROR);
+          shopify_sync_log('Could not create queue item for sync!',0);
         }
       }
 
@@ -564,7 +589,7 @@ function shopify_sync_products_queue(){
         'command' => 'deleteProducts'
       );
       if(!$queue->createItem($data)){
-        watchdog('shopify','Could not create deleteProducts queue item for sync!', array(), WATCHDOG_ERROR);
+        shopify_sync_log('Could not create deleteProducts queue item for sync!',0);
       }
 
       //create final product close batch queue item
@@ -572,7 +597,7 @@ function shopify_sync_products_queue(){
         'command'=>'closeProductBatch',
       );
       if(!$queue->createItem($data)){
-        watchdog('shopify','Could not create closeProductBatch queue item for sync!', array(), WATCHDOG_ERROR);
+        shopify_sync_log('Could not create closeProductBatch queue item for sync!',0);
       }
     }
 
@@ -586,7 +611,7 @@ function shopify_sync_products_queue(){
         'collection_count' => count($collections)
       );
       if(!$queue->createItem($data)){
-        watchdog('shopify','Could not create openCollectionBatch queue item for sync!', array(), WATCHDOG_ERROR);
+        shopify_sync_log('Could not create openCollectionBatch queue item for sync!',0);
       }
 
       foreach ($collections as $count => $c) {
@@ -596,7 +621,7 @@ function shopify_sync_products_queue(){
           'collection' => $c
         );
         if(!$queue->createItem($data)){
-          watchdog('shopify','Could not create queue syncCollections item for sync!', array(), WATCHDOG_ERROR);
+          shopify_sync_log('Could not create queue syncCollections item for sync!',0);
         }
       }
       //process collection deletions
@@ -604,7 +629,7 @@ function shopify_sync_products_queue(){
         'command' => 'deleteCollections'
       );
       if(!$queue->createItem($data)){
-        watchdog('shopify','Could not create deleteCollections queue item for sync!', array(), WATCHDOG_ERROR);
+        shopify_sync_log('Could not create deleteCollections queue item for sync!',0);
       }
 
       //create final product close batch queue item
@@ -612,7 +637,7 @@ function shopify_sync_products_queue(){
         'command'=>'closeCollectionBatch',
       );
       if(!$queue->createItem($data)){
-        watchdog('shopify','Could not create closeCollectionBatch queue item for sync!', array(), WATCHDOG_ERROR);
+        shopify_sync_log('Could not create closeCollectionBatch queue item for sync!',0);
       }
     }
 

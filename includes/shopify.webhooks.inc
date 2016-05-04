@@ -62,7 +62,7 @@ EOL;
 function shopify_shopify_webhook_process_queue_op($item){
 
   if($item === false){
-    watchdog('shopify','Webhook queue item is false!', array(), WATCHDOG_ERROR);
+    shopify_sync_log('Webhook queue item is false!',0);
     return;
   }
 
@@ -70,7 +70,7 @@ function shopify_shopify_webhook_process_queue_op($item){
   $payload = json_decode($item['payload'],true);
 
   $id = (isset($payload['id'])) ? $payload['id'] : null;
-  watchdog('shopify','Processing webhook %command id: %id', array('%command'=>$hook, '%id'=>$id), WATCHDOG_NOTICE);
+  shopify_sync_log('Processing webhook %command id: %id',1, array('%command'=>$hook, '%id'=>$id));
 
   // Allow modules to hook into webhooks firing.
   module_invoke_all('shopify_webhook', $hook, $payload);
@@ -83,7 +83,7 @@ function shopify_shopify_webhook_markQueueProcessed($ids, $status=1){
 
   foreach($ids as $id){
 
-    watchdog('shopify','Removing webhook queue item_id: %id', array('%id'=>$id), WATCHDOG_NOTICE);
+    shopify_sync_log('Removing webhook queue item_id: %id',1, array('%id'=>$id));
 
     //delete the queue item
     $deleted = db_delete('queue')
@@ -103,7 +103,7 @@ function shopify_shopify_webhook_queue($hook,$json){
   );
 
   if(!$queue->createItem($data)){
-    watchdog('shopify','Could not create webhook queue!',array(),WATCHDOG_ERROR);
+    shopify_sync_log('Could not create webhook queue!',0);
   }
 }
 
