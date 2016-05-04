@@ -432,7 +432,7 @@ function shopify_sync_products_queue_op($item){
     //open the batch
     case 'openProductBatch':
       $level = 2;
-      if($item['product_count'] > 1){
+      if($item['product_count'] > 0){
         $level = 1;
       }
       shopify_sync_log('Starting Product Sync Batch. (Syncing %count Products)',$level,array('%count'=>$item['product_count']));
