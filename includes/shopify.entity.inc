@@ -383,7 +383,7 @@ class ShopifyProduct extends Entity {
   private function locatedManagedFileByFilename($filename){
     $query = new EntityFieldQuery();
     $query->entityCondition('entity_type', 'file')
-      ->propertyCondition('filename', $filename, '=')
+      ->propertyCondition('origname', $filename, '=')
       ->range(0,1)
     ;
     $result = $query->execute();
@@ -414,28 +414,82 @@ class ShopifyProduct extends Entity {
         //try to use an existing managed file by filename
         $file = $this->locatedManagedFileByFilename($filename);
 
+        $update = false;
         if($file === false){
+          watchdog("shopify","Downloading Product (%product) Image: %file",array("%product"=>$this->product_id,"%file"=>$filename), WATCHDOG_DEBUG);
+
           $file = system_retrieve_file($product_image['src'], $directory, TRUE, FILE_EXISTS_REPLACE);
+          $update = true;
         }
 
         if( $file !== false ){
 
-          if($file->timestamp != $timestamp){
+          if($update == false && $file->timestamp != $timestamp){
+            watchdog("shopify","Updating Product (%product) Image: %file",array("%product"=>$this->product_id,"%file"=>$filename), WATCHDOG_DEBUG);
+
+            //download the updated file
+            $new_file = system_retrieve_file($product_image['src'], $directory, TRUE, FILE_EXISTS_RENAME);
+            if($new_file !== false){
+
+              //mark that this file's timestamp needs to be corrected
+              $update = true;
+
+              //force delete the old file. Let's download the new file
+              file_delete($file, true);
+
+              //set the new file equal to file
+              $file = $new_file;
+              image_path_flush($file->uri);
+            }
+          }
+
+          if($update == true){
             //update the timestamp to reflect when the file was altered on shopify
-            $file->updated = $timestamp;
-            file_save($file);
-            image_path_flush($file->uri);
+            $this->file_save($file,$timestamp);
           }
 
           $files[] = (array) $file;
-        } else {
-          watchdog("shopify","Could not retrieve product image: ".$product_image['src']);
+        }
+        else {
+          watchdog("shopify","Could not retrieve product image: ".$product_image['src'], array(), WATCHDOG_WARNING);
         }
       }
       $this->wrapper()->shopify_product_images->set($files);
     }
   }
 
+  private function file_save(stdClass $file, $timestamp) {
+    $file->timestamp = $timestamp;
+    $file->filesize = filesize($file->uri);
+
+    // Load the stored entity, if any.
+    if (!empty($file->fid) && !isset($file->original)) {
+      $file->original = entity_load_unchanged('file', $file->fid);
+    }
+
+    module_invoke_all('file_presave', $file);
+    module_invoke_all('entity_presave', $file, 'file');
+
+    if (empty($file->fid)) {
+      drupal_write_record('file_managed', $file);
+      // Inform modules about the newly added file.
+      module_invoke_all('file_insert', $file);
+      module_invoke_all('entity_insert', $file, 'file');
+    }
+    else {
+      drupal_write_record('file_managed', $file, 'fid');
+      // Inform modules that the file has been updated.
+      module_invoke_all('file_update', $file);
+      module_invoke_all('entity_update', $file, 'file');
+    }
+
+    // Clear internal properties.
+    unset($file->original);
+    // Clear the static loading cache.
+    entity_get_controller('file')->resetCache(array($file->fid));
+
+    return $file;
+  }
   /**
    * Set terms from tags for this product.
    */
