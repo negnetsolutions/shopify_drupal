@@ -328,6 +328,7 @@ function shopify_get_orphaned_tags() {
       $query = new EntityFieldQuery();
       $count = $query->entityCondition('entity_type', 'shopify_product')
         ->fieldCondition('shopify_product_tags', 'tid', $tid)
+        ->propertyCondition('status',1)
         ->execute();
       if (!$count || !isset($count['shopify_product']) || !count($count['shopify_product'])) {
         $orphaned_terms[] = $term;
@@ -447,6 +448,15 @@ function shopify_sync_products_queue_op($item){
 
       shopify_sync_log('Closing Product Sync Batch. <br />Last Sync: @last',2,array('@last'=>$last_updated));
 
+      break;
+
+    //delete tags not in shopify
+    case 'deleteOrphanedTags':
+      $tags = shopify_get_orphaned_tags();
+      foreach($tags as $tag){
+        taxonomy_term_delete($tag->tid);
+        shopify_sync_log('Deleted Orphaned Tag "@tid" named @name',3,array('@tid'=>$tag->tid,'@name'=>$tag->name));
+      }
       break;
 
     //delete collections not in shopify
@@ -590,6 +600,14 @@ function shopify_sync_products_queue(){
       );
       if(!$queue->createItem($data)){
         shopify_sync_log('Could not create deleteProducts queue item for sync!',0);
+      }
+
+      //process orphaned tag deletions
+      $data = array(
+        'command' => 'deleteOrphanedTags'
+      );
+      if(!$queue->createItem($data)){
+        shopify_sync_log('Could not create deleteOrphanedTags queue item for sync!',0);
       }
 
       //create final product close batch queue item
