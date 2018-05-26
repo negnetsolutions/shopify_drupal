@@ -439,6 +439,12 @@ function shopify_sync_products_queue_op($item){
       shopify_sync_log('Starting Product Sync Batch. (Syncing %count Products)',$level,array('%count'=>$item['product_count']));
       break;
 
+    case 'pruneXmlSitemap':
+      //unsets products from sitemap that are no longer in the shopify_products table
+      $result = db_query("delete x from xmlsitemap x left outer join shopify_products p on x.id = p.id where x.type = 'shopify_product' and p.id is null;");
+      variable_set('xmlsitemap_regenerate_needed', TRUE);
+      break;
+
     //close the batch and set last sync time to now
     case 'closeProductBatch':
       //this is a final queue item; We need to close the batch;
@@ -608,6 +614,14 @@ function shopify_sync_products_queue(){
       );
       if(!$queue->createItem($data)){
         shopify_sync_log('Could not create deleteOrphanedTags queue item for sync!',0);
+      }
+
+      //prune xmlsitemap
+      $data = array(
+        'command'=>'pruneXmlSitemap',
+      );
+      if(!$queue->createItem($data)){
+        shopify_sync_log('Could not create pruneXmlSitemap queue item for sync!',0);
       }
 
       //create final product close batch queue item
